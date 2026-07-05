@@ -1,0 +1,52 @@
+db:
+  image: postgres
+
+redis:
+  image: redis
+
+rabbitmq:
+  image: tutum/rabbitmq
+  environment:
+    - RABBITMQ_PASS=mypass
+
+django:
+  build: .
+  command: su -m myuser -c "python manage.py runserver 0.0.0.0:8000"
+  volumes:
+    - webapp/:/source/
+  environment:
+    - DEBUG=True
+    - DJANGO_SETTINGS_MODULE=webapp.settings.default
+    - HTTPS=off
+    - VIRTUAL_HOST=dockerhost
+  expose:
+    - '8000'
+  links:
+    - db:db
+    - redis:redis
+    - rabbitmq:rabbitmq
+
+worker:
+  build: .
+  command: su -m myuser -c "celery -A webapp worker -l info -Ofair"
+  volumes_from:
+    - django
+  environment:
+    - DEBUG=False
+    - DJANGO_SETTINGS_MODULE=webapp.settings.default
+  links:
+    - db:db
+    - redis:redis
+    - rabbitmq:rabbitmq
+
+nginx:
+  image: jwilder/nginx-proxy
+  volumes_from:
+    - django
+  volumes:
+    - /source/nginx:/etc/nginx/vhost.d:ro
+    - /var/run/docker.sock:/tmp/docker.sock
+  ports:
+    - '80:80'
+  links:
+    - django:django
